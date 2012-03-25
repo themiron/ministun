@@ -5,7 +5,7 @@ AR=$(CROSS)ar
 RANLIB=$(CROSS)ranlib
 
 CCFLAGS+=-O2 -Wall -I. -Wno-pointer-sign -fomit-frame-pointer
-LDFLAGS=-s
+LDFLAGS+=-s
 LIBS=
 
 PACKAGE=ministun
