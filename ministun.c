@@ -56,7 +56,7 @@
 
 #undef STUN_BINDREQ_PROCESS
 
-char *stunserver = "stun.xten.com";
+char *stunserver = STUN_SERVER;
 int stunport = STUN_PORT;
 int stuncount = STUN_COUNT;
 int stundebug = 0;

@@ -12,6 +12,7 @@
  *
  */
 
+#define STUN_SERVER "stun.xten.com"
 #define STUN_PORT 3478
 #define STUN_COUNT 3
 #define STUN_TIMEOUT 3
