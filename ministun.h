@@ -12,6 +12,9 @@
  *
  */
 
+#define PACKAGE		"ministun"
+#define VERSION		"0.1"
+
 #define STUN_SERVER "stun.xten.com"
 #define STUN_PORT 3478
 #define STUN_COUNT 3

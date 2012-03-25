@@ -400,7 +400,8 @@ int stun_request(int s, struct sockaddr_in *dst,
 
 static void usage(char *name)
 {
-	fprintf(stderr, "Usage: %s [-p port] [-c count] [-d] stun_server\n", name);
+	fprintf(stderr, "Minimalistic STUN client ver.%s\n", VERSION);
+	fprintf(stderr, "Usage: %s [-p port] [-c count] [-d] stun_server\n", PACKAGE);
 }
 
 int main(int argc, char *argv[])
