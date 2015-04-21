@@ -136,6 +136,8 @@ static const char *stun_attr2str(int msg)
 		{ STUN_REALM, "Realm" },
 		{ STUN_NONCE, "Nonce" },
 		{ STUN_XOR_MAPPED_ADDRESS, "XOR Mapped Address" },
+		{ STUN_MS_VERSION, "MS Version" },
+		{ STUN_MS_XOR_MAPPED_ADDRESS, "MS XOR Mapped Address" },
 		{ STUN_SOFTWARE, "Software" },
 		{ STUN_ALTERNATE_SERVER, "Alternate Server" },
 		{ STUN_FINGERPRINT, "Fingerprint" },
@@ -175,6 +177,7 @@ static int stun_process_attr(struct stun_state *state, struct stun_attr *attr)
 #endif
 	case STUN_MAPPED_ADDRESS:
 	case STUN_XOR_MAPPED_ADDRESS:
+	case STUN_MS_XOR_MAPPED_ADDRESS:
 		break;
 	default:
 		if (stundebug)
@@ -364,9 +367,14 @@ static int stun_get_mapped(struct stun_state *st, struct stun_attr *attr, void *
 
 	switch (type) {
 	case STUN_MAPPED_ADDRESS:
-		if (st->attr == STUN_XOR_MAPPED_ADDRESS)
+		if (st->attr == STUN_XOR_MAPPED_ADDRESS ||
+		    st->attr == STUN_MS_XOR_MAPPED_ADDRESS)
 			return 1;
 		magic = 0;
+		break;
+	case STUN_MS_XOR_MAPPED_ADDRESS:
+		if (st->attr == STUN_XOR_MAPPED_ADDRESS)
+			return 1;
 		break;
 	case STUN_XOR_MAPPED_ADDRESS:
 		break;
