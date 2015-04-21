@@ -16,7 +16,7 @@ all: $(PACKAGE)
 $(PACKAGE): $(PACKAGE).o $(LIBS)
 	$(CC) $(CCFLAGS) $(LDFLAGS) $(OBJS) -o $(PACKAGE) $(LIBS)
 
-%.o: %.c
+%.o: %.c %.h
 	$(CC) $(CCFLAGS) -c $<
 
 clean:
