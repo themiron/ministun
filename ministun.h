@@ -15,10 +15,10 @@
 #define PACKAGE		"ministun"
 #define VERSION		"0.1"
 
-#define STUN_SERVER "stun.xten.com"
-#define STUN_PORT 3478
-#define STUN_COUNT 3
-#define STUN_TIMEOUT 3
+#define STUN_SERVER	"stun.services.mozilla.com"
+#define STUN_PORT	3478
+#define STUN_COUNT	3
+#define STUN_TIMEOUT	2
 
 typedef struct { unsigned int id[3]; } __attribute__((packed)) stun_trans_id;
 
