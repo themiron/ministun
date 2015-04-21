@@ -20,11 +20,12 @@
 #define STUN_COUNT 3
 #define STUN_TIMEOUT 3
 
-typedef struct { unsigned int id[4]; } __attribute__((packed)) stun_trans_id;
+typedef struct { unsigned int id[3]; } __attribute__((packed)) stun_trans_id;
 
 struct stun_header {
 	unsigned short msgtype;
 	unsigned short msglen;
+	unsigned int magic;
 	stun_trans_id  id;
 	unsigned char  ies[0];
 } __attribute__((packed));
@@ -48,26 +49,30 @@ struct stun_addr {
 #define STUN_IGNORE		(0)
 #define STUN_ACCEPT		(1)
 
-/* STUN message types
- * 'BIND' refers to transactions used to determine the externally
- * visible addresses. 'SEC' refers to transactions used to establish
- * a session key for subsequent requests.
- * 'SEC' functionality is not supported here.
- */
- 
-#define STUN_BINDREQ	0x0001
-#define STUN_BINDRESP	0x0101
-#define STUN_BINDERR	0x0111
-#define STUN_SECREQ	0x0002
-#define STUN_SECRESP	0x0102
-#define STUN_SECERR	0x0112
+#define STUN_MAGIC_COOKIE	0x2112A442
+
+/* STUN message classes */
+#define STUN_REQUEST		0x0000
+#define STUN_INDICATION		0x0001
+#define STUN_RESPONSE		0x0002
+#define STUN_ERROR_RESPONSE	0x0003
+
+/* STUN message methods */
+#define STUN_BINDING		0x0001
+#define STUN_SHARED_SECRET	0x0002
+#define STUN_ALLOCATE		0x0003
+#define STUN_REFRESH		0x0004
+#define STUN_SEND		0x0006
+#define STUN_DATA		0x0007
+#define STUN_CREATE_PERMISSION	0x0008
+#define STUN_CHANNEL_BIND	0x0009
 
 /* Basic attribute types in stun messages.
  * Messages can also contain custom attributes (codes above 0x7fff)
  */
 #define STUN_MAPPED_ADDRESS	0x0001
 #define STUN_RESPONSE_ADDRESS	0x0002
-#define STUN_CHANGE_REQUEST	0x0003
+#define STUN_CHANGE_ADDRESS	0x0003
 #define STUN_SOURCE_ADDRESS	0x0004
 #define STUN_CHANGED_ADDRESS	0x0005
 #define STUN_USERNAME		0x0006
@@ -76,3 +81,9 @@ struct stun_addr {
 #define STUN_ERROR_CODE		0x0009
 #define STUN_UNKNOWN_ATTRIBUTES	0x000a
 #define STUN_REFLECTED_FROM	0x000b
+#define STUN_REALM		0x0014
+#define STUN_NONCE		0x0015
+#define STUN_XOR_MAPPED_ADDRESS	0x0020
+#define STUN_SOFTWARE		0x8022
+#define STUN_ALTERNATE_SERVER	0x8023
+#define STUN_FINGERPRINT	0x8028

@@ -56,65 +56,107 @@
 
 #undef STUN_BINDREQ_PROCESS
 
+struct stun_strings {
+	const int value;
+	const char *name;
+};
+
 char *stunserver = STUN_SERVER;
 int stunport = STUN_PORT;
 int stuncount = STUN_COUNT;
 int stundebug = 0;
 
+static inline int stun_msg2class(int msg)
+{
+	return ((msg & 0x0010) >> 4) | ((msg & 0x0100) >> 7);
+}
+
+static inline int stun_msg2method(int msg)
+{
+	return (msg & 0x000f) | ((msg & 0x00e0) >> 1) | ((msg & 0x3e00) >> 2);
+}
+
+static inline int stun_msg2type(int class, int method)
+{
+	return ((class & 1) << 4) | ((class & 2) << 7) |
+		(method & 0x000f) | ((method & 0x0070) << 1) | ((method & 0x0f800) << 2);
+}
+
 /* helper function to print message names */
 static const char *stun_msg2str(int msg)
 {
-	switch (msg) {
-	case STUN_BINDREQ:
-		return "Binding Request";
-	case STUN_BINDRESP:
-		return "Binding Response";
-	case STUN_BINDERR:
-		return "Binding Error Response";
-	case STUN_SECREQ:
-		return "Shared Secret Request";
-	case STUN_SECRESP:
-		return "Shared Secret Response";
-	case STUN_SECERR:
-		return "Shared Secret Error Response";
+	static const struct stun_strings classes[] = {
+		{ STUN_REQUEST, "Request" },
+		{ STUN_INDICATION, "Indication" },
+		{ STUN_RESPONSE, "Response" },
+		{ STUN_ERROR_RESPONSE, "Error Response" },
+		{ 0, NULL }
+	};
+	static const struct stun_strings methods[] = {
+		{ STUN_BINDING, "Binding" },
+		{ 0, NULL }
+	};
+	static char result[32];
+	const char *class = NULL, *method = NULL;
+	int i, value;
+
+	value = stun_msg2class(msg);
+	for (i = 0; classes[i].name; i++) {
+		class = classes[i].name;
+		if (classes[i].value == value)
+			break;
 	}
-	return "Non-RFC3489 Message";
+	value = stun_msg2method(msg);
+	for (i = 0; methods[i].name; i++) {
+		method = methods[i].name;
+		if (methods[i].value == value)
+			break;
+	}
+	snprintf(result, sizeof(result), "%s %s",
+		method ? : "Unknown Method",
+		class ? : "Unknown Class Message");
+	return result;
 }
 
 /* helper function to print attribute names */
 static const char *stun_attr2str(int msg)
 {
-	switch (msg) {
-	case STUN_MAPPED_ADDRESS:
-		return "Mapped Address";
-	case STUN_RESPONSE_ADDRESS:
-		return "Response Address";
-	case STUN_CHANGE_REQUEST:
-		return "Change Request";
-	case STUN_SOURCE_ADDRESS:
-		return "Source Address";
-	case STUN_CHANGED_ADDRESS:
-		return "Changed Address";
-	case STUN_USERNAME:
-		return "Username";
-	case STUN_PASSWORD:
-		return "Password";
-	case STUN_MESSAGE_INTEGRITY:
-		return "Message Integrity";
-	case STUN_ERROR_CODE:
-		return "Error Code";
-	case STUN_UNKNOWN_ATTRIBUTES:
-		return "Unknown Attributes";
-	case STUN_REFLECTED_FROM:
-		return "Reflected From";
+	static const struct stun_strings attrs[] = {
+		{ STUN_MAPPED_ADDRESS, "Mapped Address" },
+		{ STUN_RESPONSE_ADDRESS, "Response Address" },
+		{ STUN_CHANGE_ADDRESS, "Change Address" },
+		{ STUN_SOURCE_ADDRESS, "Source Address" },
+		{ STUN_CHANGED_ADDRESS, "Changed Address" },
+		{ STUN_USERNAME, "Username" },
+		{ STUN_PASSWORD, "Password" },
+		{ STUN_MESSAGE_INTEGRITY, "Message Integrity" },
+		{ STUN_ERROR_CODE, "Error Code" },
+		{ STUN_UNKNOWN_ATTRIBUTES, "Unknown Attributes" },
+		{ STUN_REFLECTED_FROM, "Reflected From" },
+		{ STUN_REALM, "Realm" },
+		{ STUN_NONCE, "Nonce" },
+		{ STUN_XOR_MAPPED_ADDRESS, "XOR Mapped Address" },
+		{ STUN_SOFTWARE, "Software" },
+		{ STUN_ALTERNATE_SERVER, "Alternate Server" },
+		{ STUN_FINGERPRINT, "Fingerprint" },
+		{ 0, NULL }
+	};
+	int i;
+
+	for (i = 0; attrs[i].name; i++) {
+		if (attrs[i].value == msg)
+			return attrs[i].name;
 	}
-	return "Non-RFC3489 Attribute";
+	return "Unknown Attribute";
 }
 
 /* here we store credentials extracted from a message */
 struct stun_state {
+#ifdef STUN_BINDREQ_PROCESS
 	const char *username;
 	const char *password;
+#endif
+	unsigned short attr;
 };
 
 static int stun_process_attr(struct stun_state *state, struct stun_attr *attr)
@@ -132,10 +174,11 @@ static int stun_process_attr(struct stun_state *state, struct stun_attr *attr)
 		break;
 #endif
 	case STUN_MAPPED_ADDRESS:
+	case STUN_XOR_MAPPED_ADDRESS:
 		break;
 	default:
 		if (stundebug)
-			fprintf(stderr, "Ignoring STUN attribute %s (%04x), length %d\n", 
+			fprintf(stderr, "Ignoring STUN Attribute %s (%04x), length %d\n", 
 				    stun_attr2str(ntohs(attr->attr)), ntohs(attr->attr), ntohs(attr->len));
 	}
 	return 0;
@@ -160,7 +203,7 @@ static void append_attr_string(struct stun_attr **attr, int attrval, const char 
 }
 
 /* append an address to an STUN message */
-static void append_attr_address(struct stun_attr **attr, int attrval, struct sockaddr_in *sock_in, int *len, int *left)
+static void append_attr_address(struct stun_attr **attr, int attrval, struct sockaddr_in *sock_in, int *len, int *left, unsigned int magic)
 {
 	int size = sizeof(**attr) + 8;
 	struct stun_addr *addr;
@@ -170,8 +213,8 @@ static void append_attr_address(struct stun_attr **attr, int attrval, struct soc
 		addr = (struct stun_addr *)((*attr)->value);
 		addr->unused = 0;
 		addr->family = 0x01;
-		addr->port = sock_in->sin_port;
-		addr->addr = sock_in->sin_addr.s_addr;
+		addr->port = sock_in->sin_port ^ htons(ntohl(magic) >> 16);
+		addr->addr = sock_in->sin_addr.s_addr ^ magic;
 		(*attr) = (struct stun_attr *)((*attr)->value + 8);
 		*len += size;
 		*left -= size;
@@ -191,12 +234,13 @@ static void stun_req_id(struct stun_header *req)
 {
 	int x;
 	srandom(time(0));
-	for (x = 0; x < 4; x++)
+	req->magic = htonl(STUN_MAGIC_COOKIE);
+	for (x = 0; x < 3; x++)
 		req->id.id[x] = random();
 }
 
 /* callback type to be invoked on stun responses. */
-typedef int (stun_cb_f)(struct stun_attr *attr, void *arg);
+typedef int (stun_cb_f)(struct stun_state *st, struct stun_attr *attr, void *arg, unsigned int magic);
 
 /* handle an incoming STUN message.
  *
@@ -246,7 +290,7 @@ static int stun_handle_packet(int s, struct sockaddr_in *src,
 			break;
 		}
 		if (stun_cb)
-			stun_cb(attr, arg);
+			stun_cb(&st, attr, arg, hdr->magic);
 		if (stun_process_attr(&st, attr)) {
 			fprintf(stderr, "Failed to handle attribute %s (%04x)\n", stun_attr2str(ntohs(attr->attr)), ntohs(attr->attr));
 			break;
@@ -276,29 +320,32 @@ static int stun_handle_packet(int s, struct sockaddr_in *src,
 		struct stun_header *resp = (struct stun_header *)respdata;
 		int resplen = 0;	// len excluding header
 		int respleft = sizeof(respdata) - sizeof(struct stun_header);
+		int class, method;
 
+		resp->magic = hdr->magic;
 		resp->id = hdr->id;
 		resp->msgtype = 0;
 		resp->msglen = 0;
 		attr = (struct stun_attr *)resp->ies;
-		switch (ntohs(hdr->msgtype)) {
-		case STUN_BINDREQ:
+		class = stun_msg2class(ntohs(hdr->msgtype));
+		method = stun_msg2method(ntohs(hdr->msgtype));
+		if (class == STUN_REQUEST && method == STUN_BINDING) {
 			if (stundebug)
-				fprintf(stderr, "STUN Bind Request, username: %s\n", 
-					    st.username ? st.username : "<none>");
+				fprintf(stderr, "STUN %s, username: %s\n",
+					stun_msg2str(ntohs(hdr->msgtype)), st.username ? : "<none>");
 			if (st.username)
 				append_attr_string(&attr, STUN_USERNAME, st.username, &resplen, &respleft);
-			append_attr_address(&attr, STUN_MAPPED_ADDRESS, src, &resplen, &respleft);
+			if (resp->magic == htonl(STUN_MAGIC_COOKIE))
+				append_attr_address(&attr, STUN_XOR_MAPPED_ADDRESS, src, &resplen, &respleft, hdr->magic);
+			append_attr_address(&attr, STUN_MAPPED_ADDRESS, src, &resplen, &respleft, 0);
 			resp->msglen = htons(resplen);
-			resp->msgtype = htons(STUN_BINDRESP);
+			resp->msgtype = htons(stun_msg2type(STUN_RESPONSE, STUN_BINDING));
 			stun_send(s, src, resp);
 			ret = STUN_ACCEPT;
-			break;
-		default:
+		} else if (class != STUN_RESPONSE || method != STUN_BINDING) {
 			if (stundebug)
 				fprintf(stderr, "Dunno what to do with STUN message %04x (%s)\n",
 					ntohs(hdr->msgtype), stun_msg2str(ntohs(hdr->msgtype)));
-			break;
 		}
 	}
 #endif
@@ -309,15 +356,29 @@ static int stun_handle_packet(int s, struct sockaddr_in *src,
  * This is used as a callback for stun_handle_response
  * when called from stun_request.
  */
-static int stun_get_mapped(struct stun_attr *attr, void *arg)
+static int stun_get_mapped(struct stun_state *st, struct stun_attr *attr, void *arg, unsigned int magic)
 {
 	struct stun_addr *addr = (struct stun_addr *)(attr + 1);
 	struct sockaddr_in *sa = (struct sockaddr_in *)arg;
+	unsigned short type = ntohs(attr->attr);
 
-	if (ntohs(attr->attr) != STUN_MAPPED_ADDRESS || ntohs(attr->len) != 8)
-		return 1;	/* not us. */
-	sa->sin_port = addr->port;
-	sa->sin_addr.s_addr = addr->addr;
+	switch (type) {
+	case STUN_MAPPED_ADDRESS:
+		if (st->attr == STUN_XOR_MAPPED_ADDRESS)
+			return 1;
+		magic = 0;
+		break;
+	case STUN_XOR_MAPPED_ADDRESS:
+		break;
+	default:
+		return 1;
+	}
+	if (ntohs(attr->len) < 8 && addr->family != 1)
+		return 1;
+
+	st->attr = type;
+	sa->sin_port = addr->port ^ htons(ntohl(magic) >> 16);
+	sa->sin_addr.s_addr = addr->addr ^ magic;
 	return 0;
 }
 
@@ -357,7 +418,7 @@ int stun_request(int s, struct sockaddr_in *dst,
 		append_attr_string(&attr, STUN_USERNAME, username, &reqlen, &reqleft);
 #endif
 	req->msglen = htons(reqlen);
-	req->msgtype = htons(STUN_BINDREQ);
+	req->msgtype = htons(stun_msg2type(STUN_REQUEST, STUN_BINDING));
 	for (retry = 0; retry < stuncount; retry++) {
 		/* send request, possibly wait for reply */
 		unsigned char reply_buf[1024];
