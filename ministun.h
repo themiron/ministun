@@ -18,7 +18,8 @@
 #define STUN_SERVER	"stun.services.mozilla.com"
 #define STUN_PORT	3478
 #define STUN_COUNT	3
-#define STUN_TIMEOUT	2
+#define STUN_RTO	500 /* ms */
+#define STUN_MRC	3
 
 typedef struct { unsigned int id[3]; } __attribute__((packed)) stun_trans_id;
 

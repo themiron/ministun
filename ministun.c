@@ -61,10 +61,11 @@ struct stun_strings {
 	const char *name;
 };
 
-char *stunserver = STUN_SERVER;
-int stunport = STUN_PORT;
-int stuncount = STUN_COUNT;
-int stundebug = 0;
+static char *stun_server = STUN_SERVER;
+static int stun_port = STUN_PORT;
+static int stun_rto = STUN_RTO;
+static int stun_mrc = STUN_MRC;
+static int stun_debug = 0;
 
 static inline int stun_msg2class(int msg)
 {
@@ -163,7 +164,7 @@ struct stun_state {
 
 static int stun_process_attr(struct stun_state *state, struct stun_attr *attr)
 {
-	if (stundebug)
+	if (stun_debug)
 		fprintf(stderr, "Found STUN Attribute %s (%04x), length %d\n",
 			    stun_attr2str(ntohs(attr->attr)), ntohs(attr->attr), ntohs(attr->len));
 	switch (ntohs(attr->attr)) {
@@ -180,7 +181,7 @@ static int stun_process_attr(struct stun_state *state, struct stun_attr *attr)
 	case STUN_MS_XOR_MAPPED_ADDRESS:
 		break;
 	default:
-		if (stundebug)
+		if (stun_debug)
 			fprintf(stderr, "Ignoring STUN Attribute %s (%04x), length %d\n", 
 				    stun_attr2str(ntohs(attr->attr)), ntohs(attr->attr), ntohs(attr->len));
 	}
@@ -273,7 +274,7 @@ static int stun_handle_packet(int s, struct sockaddr_in *src,
 	len -= sizeof(struct stun_header);
 	data += sizeof(struct stun_header);
 	x = ntohs(hdr->msglen);	/* len as advertised in the message */
-	if (stundebug)
+	if (stun_debug)
 		fprintf(stderr, "STUN Packet, msg %s (%04x), length: %d\n", stun_msg2str(ntohs(hdr->msgtype)), ntohs(hdr->msgtype), x);
 	if (x > len) {
 		fprintf(stderr, "Scrambled STUN packet length (got %d, expecting %d)\n", x, (int)len);
@@ -333,7 +334,7 @@ static int stun_handle_packet(int s, struct sockaddr_in *src,
 		class = stun_msg2class(ntohs(hdr->msgtype));
 		method = stun_msg2method(ntohs(hdr->msgtype));
 		if (class == STUN_REQUEST && method == STUN_BINDING) {
-			if (stundebug)
+			if (stun_debug)
 				fprintf(stderr, "STUN %s, username: %s\n",
 					stun_msg2str(ntohs(hdr->msgtype)), st.username ? : "<none>");
 			if (st.username)
@@ -346,7 +347,7 @@ static int stun_handle_packet(int s, struct sockaddr_in *src,
 			stun_send(s, src, resp);
 			ret = STUN_ACCEPT;
 		} else if (class != STUN_RESPONSE || method != STUN_BINDING) {
-			if (stundebug)
+			if (stun_debug)
 				fprintf(stderr, "Dunno what to do with STUN message %04x (%s)\n",
 					ntohs(hdr->msgtype), stun_msg2str(ntohs(hdr->msgtype)));
 		}
@@ -412,7 +413,7 @@ int stun_request(int s, struct sockaddr_in *dst,
 	int reqlen, reqleft;
 	struct stun_attr *attr;
 	int res = 0;
-	int retry;
+	int retry, timeout = stun_rto;
 
 	req = (struct stun_header *)reqdata;
 	stun_req_id(req);
@@ -427,15 +428,17 @@ int stun_request(int s, struct sockaddr_in *dst,
 #endif
 	req->msglen = htons(reqlen);
 	req->msgtype = htons(stun_msg2type(STUN_REQUEST, STUN_BINDING));
-	for (retry = 0; retry < stuncount; retry++) {
+	for (retry = 0; retry < stun_mrc; retry++) {
 		/* send request, possibly wait for reply */
 		unsigned char reply_buf[1024];
 		fd_set rfds;
-		struct timeval to = { STUN_TIMEOUT, 0 };
+		struct timeval to = { timeout / 1000, (timeout % 1000) * 1000 };
 		struct sockaddr_in src;
 		socklen_t srclen;
 
-		res = stun_send(s, dst, req);
+		do {
+			res = stun_send(s, dst, req);
+		} while (res < 0 && errno == EINTR);
 		if (res < 0) {
 			fprintf(stderr, "Request send #%d failed error %d, retry\n",
 				retry, res);
@@ -445,9 +448,15 @@ int stun_request(int s, struct sockaddr_in *dst,
 			break;
 		FD_ZERO(&rfds);
 		FD_SET(s, &rfds);
-		res = select(s + 1, &rfds, NULL, NULL, &to);
-		if (res <= 0) {	/* timeout or error */
-			fprintf(stderr, "Response read timeout #%d failed error %d, retry\n",
+		do {
+			res = select(s + 1, &rfds, NULL, NULL, &to);
+		} while (res < 0 && errno == EINTR);
+		if (res == 0) {	/* timeout */
+			fprintf(stderr, "Response read #%d timeout, retry\n", retry);
+			timeout *= 2;
+			continue;
+		} else if (res < 0) { /* error */
+			fprintf(stderr, "Response read #%d failed error %d, retry\n",
 				retry, res);
 			continue;
 		}
@@ -456,8 +465,10 @@ int stun_request(int s, struct sockaddr_in *dst,
 		/* XXX pass -1 in the size, because stun_handle_packet might
 		 * write past the end of the buffer.
 		 */
-		res = recvfrom(s, reply_buf, sizeof(reply_buf) - 1,
-			0, (struct sockaddr *)&src, &srclen);
+		do  {
+			res = recvfrom(s, reply_buf, sizeof(reply_buf) - 1,
+				0, (struct sockaddr *)&src, &srclen);
+		} while (res < 0 && errno == EINTR);
 		if (res <= 0) {
 			fprintf(stderr, "Response read #%d failed error %d, retry\n",
 				retry, res);
@@ -473,7 +484,7 @@ int stun_request(int s, struct sockaddr_in *dst,
 static void usage(char *name)
 {
 	fprintf(stderr, "Minimalistic STUN client ver.%s\n", VERSION);
-	fprintf(stderr, "Usage: %s [-p port] [-c count] [-d] stun_server\n", PACKAGE);
+	fprintf(stderr, "Usage: %s [-p port] [-t timeout ms] [-c count] [-d] stun_server\n", PACKAGE);
 }
 
 int main(int argc, char *argv[])
@@ -482,35 +493,38 @@ int main(int argc, char *argv[])
 	struct sockaddr_in server,client,mapped;
 	struct hostent *hostinfo;
 
-	while ((opt = getopt(argc, argv, "p:c:t:dh")) != -1) {
+	while ((opt = getopt(argc, argv, "p:t:c:dh")) != -1) {
 		switch (opt) {
-			case 'p':
-				stunport = atoi(optarg);
-				break;
-			case 'c':
-				stuncount = atoi(optarg);
-				break;
-			case 'd':
-				stundebug++;
-				break;
-			default:
-				usage(argv[0]);
-				return -1;
-			}
+		case 'p':
+			stun_port = atoi(optarg);
+			break;
+		case 't':
+			stun_rto = atoi(optarg);
+			break;
+		case 'c':
+			stun_mrc = atoi(optarg);
+			break;
+		case 'd':
+			stun_debug++;
+			break;
+		default:
+			usage(argv[0]);
+			return -1;
+		}
 	}
 
 	if (optind < argc)
-		stunserver = argv[optind];
+		stun_server = argv[optind];
 
-	hostinfo = gethostbyname(stunserver);
+	hostinfo = gethostbyname(stun_server);
 	if (!hostinfo) {
-		fprintf(stderr, "Error resolving host %s\n", stunserver);
+		fprintf(stderr, "Error resolving host %s\n", stun_server);
 		return -1;
 	}
 	bzero(&server, sizeof(server));
 	server.sin_family = AF_INET;
 	server.sin_addr = *(struct in_addr*) hostinfo->h_addr;
-	server.sin_port = htons(stunport);
+	server.sin_port = htons(stun_port);
 
 	sock = socket(AF_INET, SOCK_DGRAM, 0);
 	if( sock < 0 ) {
