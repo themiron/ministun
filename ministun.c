@@ -188,7 +188,6 @@ static int stun_process_attr(struct stun_state *state, struct stun_attr *attr)
 	return 0;
 }
 
-#ifdef STUN_BINDREQ_PROCESS
 /* append a string to an STUN message */
 static void append_attr_string(struct stun_attr **attr, int attrval, const char *s, int *len, int *left)
 {
@@ -206,6 +205,7 @@ static void append_attr_string(struct stun_attr **attr, int attrval, const char 
 	}
 }
 
+#ifdef STUN_BINDREQ_PROCESS
 /* append an address to an STUN message */
 static void append_attr_address(struct stun_attr **attr, int attrval, struct sockaddr_in *sock_in, int *len, int *left, unsigned int magic)
 {
@@ -342,6 +342,7 @@ static int stun_handle_packet(int s, struct sockaddr_in *src,
 			if (resp->magic == htonl(STUN_MAGIC_COOKIE))
 				append_attr_address(&attr, STUN_XOR_MAPPED_ADDRESS, src, &resplen, &respleft, hdr->magic);
 			append_attr_address(&attr, STUN_MAPPED_ADDRESS, src, &resplen, &respleft, 0);
+			append_attr_string(&attr, STUN_SOFTWARE, PACKAGE " v" VERSION, &reqlen, &reqleft);
 			resp->msglen = htons(resplen);
 			resp->msgtype = htons(stun_msg2type(STUN_RESPONSE, STUN_BINDING));
 			stun_send(s, src, resp);
@@ -426,6 +427,7 @@ int stun_request(int s, struct sockaddr_in *dst,
 	if (username)
 		append_attr_string(&attr, STUN_USERNAME, username, &reqlen, &reqleft);
 #endif
+	append_attr_string(&attr, STUN_SOFTWARE, PACKAGE " v" VERSION, &reqlen, &reqleft);
 	req->msglen = htons(reqlen);
 	req->msgtype = htons(stun_msg2type(STUN_REQUEST, STUN_BINDING));
 	for (retry = 0; retry < stun_mrc; retry++) {
@@ -483,7 +485,7 @@ int stun_request(int s, struct sockaddr_in *dst,
 
 static void usage(char *name)
 {
-	fprintf(stderr, "Minimalistic STUN client ver.%s\n", VERSION);
+	fprintf(stderr, "Minimalistic STUN client v%s\n", VERSION);
 	fprintf(stderr, "Usage: %s [-p port] [-t timeout ms] [-c count] [-d] stun_server\n", PACKAGE);
 }
 
