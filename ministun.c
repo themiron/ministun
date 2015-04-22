@@ -486,7 +486,7 @@ int stun_request(int s, struct sockaddr_in *dst,
 static void usage(char *name)
 {
 	fprintf(stderr, "Minimalistic STUN client v%s\n", VERSION);
-	fprintf(stderr, "Usage: %s [-p port] [-t timeout ms] [-c count] [-d] stun_server\n", PACKAGE);
+	fprintf(stderr, "Usage: %s [-t timeout ms] [-c count] [-d] [stun_server[:port]]\n", PACKAGE);
 }
 
 int main(int argc, char *argv[])
@@ -494,12 +494,10 @@ int main(int argc, char *argv[])
 	int sock, opt, res;
 	struct sockaddr_in server,client,mapped;
 	struct hostent *hostinfo;
+	char *value;
 
-	while ((opt = getopt(argc, argv, "p:t:c:dh")) != -1) {
+	while ((opt = getopt(argc, argv, "t:c:dh")) != -1) {
 		switch (opt) {
-		case 'p':
-			stun_port = atoi(optarg);
-			break;
 		case 't':
 			stun_rto = atoi(optarg);
 			break;
@@ -509,27 +507,22 @@ int main(int argc, char *argv[])
 		case 'd':
 			stun_debug++;
 			break;
+		case 'h':
 		default:
 			usage(argv[0]);
 			return -1;
 		}
 	}
 
-	if (optind < argc)
-		stun_server = argv[optind];
-
-	hostinfo = gethostbyname(stun_server);
-	if (!hostinfo) {
-		fprintf(stderr, "Error resolving host %s\n", stun_server);
-		return -1;
+	if (optind < argc) {
+		value = argv[optind];
+		stun_server = strsep(&value, ":");
+		if (value && *value)
+			stun_port = atoi(value);
 	}
-	bzero(&server, sizeof(server));
-	server.sin_family = AF_INET;
-	server.sin_addr = *(struct in_addr*) hostinfo->h_addr;
-	server.sin_port = htons(stun_port);
 
 	sock = socket(AF_INET, SOCK_DGRAM, 0);
-	if( sock < 0 ) {
+	if (sock < 0) {
 		fprintf(stderr, "Error creating socket\n");
 		return -1;
 	}
@@ -538,15 +531,28 @@ int main(int argc, char *argv[])
 	client.sin_family = AF_INET;
 	client.sin_addr.s_addr = htonl(INADDR_ANY);
 	client.sin_port = 0;
-        if (bind(sock, (struct sockaddr*)&client, sizeof(client)) < 0) {
+	if (bind(sock, (struct sockaddr*) &client, sizeof(client)) < 0) {
 		fprintf(stderr, "Error bind to socket\n");
 		close(sock);
 		return -1;
 	}
+
+	hostinfo = gethostbyname(stun_server);
+	if (!hostinfo) {
+		fprintf(stderr, "Error resolving host %s\n", stun_server);
+		close(sock);
+		return -1;
+	}
+	bzero(&server, sizeof(server));
+	server.sin_family = AF_INET;
+	server.sin_addr = *(struct in_addr*) hostinfo->h_addr;
+	server.sin_port = htons(stun_port);
+
 	res = stun_request(sock, &server, NULL, &mapped);
+	close(sock);
+
 	if (!res && (mapped.sin_addr.s_addr != htonl(INADDR_ANY)))
 		printf("%s\n",inet_ntoa(mapped.sin_addr));
 
-	close(sock);
 	return res;
 }
