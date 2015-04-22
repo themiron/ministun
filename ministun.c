@@ -551,8 +551,10 @@ int main(int argc, char *argv[])
 	res = stun_request(sock, &server, NULL, &mapped);
 	close(sock);
 
-	if (!res && (mapped.sin_addr.s_addr != htonl(INADDR_ANY)))
-		printf("%s\n",inet_ntoa(mapped.sin_addr));
+	if (res == 0 && mapped.sin_addr.s_addr == INADDR_ANY)
+		res = -1;
+	if (res == 0)
+		printf("%s\n", inet_ntoa(mapped.sin_addr));
 
 	return res;
 }
