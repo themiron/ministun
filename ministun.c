@@ -61,6 +61,7 @@ struct stun_strings {
 	const char *name;
 };
 
+static char *stun_local = "0.0.0.0";
 static char *stun_server = STUN_SERVER;
 static int stun_port = STUN_PORT;
 static int stun_rto = STUN_RTO;
@@ -486,7 +487,7 @@ int stun_request(int s, struct sockaddr_in *dst,
 static void usage(char *name)
 {
 	fprintf(stderr, "Minimalistic STUN client v%s\n", VERSION);
-	fprintf(stderr, "Usage: %s [-t timeout ms] [-c count] [-d] [stun_server[:port]]\n", PACKAGE);
+	fprintf(stderr, "Usage: %s [-t timeout ms] [-c count] [-l local ip] [-d] [stun_server[:port]]\n", PACKAGE);
 }
 
 int main(int argc, char *argv[])
@@ -496,13 +497,16 @@ int main(int argc, char *argv[])
 	struct hostent *hostinfo;
 	char *value;
 
-	while ((opt = getopt(argc, argv, "t:c:dh")) != -1) {
+	while ((opt = getopt(argc, argv, "t:c:l:dh")) != -1) {
 		switch (opt) {
 		case 't':
 			stun_rto = atoi(optarg);
 			break;
 		case 'c':
 			stun_mrc = atoi(optarg);
+			break;
+		case 'l':
+			stun_local = optarg;
 			break;
 		case 'd':
 			stun_debug++;
@@ -529,9 +533,9 @@ int main(int argc, char *argv[])
 
 	bzero(&client, sizeof(client));
 	client.sin_family = AF_INET;
-	client.sin_addr.s_addr = htonl(INADDR_ANY);
 	client.sin_port = 0;
-	if (bind(sock, (struct sockaddr*) &client, sizeof(client)) < 0) {
+	if (inet_aton(stun_local, &client.sin_addr) == 0 ||
+	    bind(sock, (struct sockaddr*) &client, sizeof(client)) < 0) {
 		fprintf(stderr, "Error bind to socket\n");
 		close(sock);
 		return -1;
