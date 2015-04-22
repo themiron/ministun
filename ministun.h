@@ -13,7 +13,7 @@
  */
 
 #define PACKAGE		"ministun"
-#define VERSION		"0.3"
+#define VERSION		"0.4"
 
 #define STUN_SERVER	"stun.services.mozilla.com"
 #define STUN_PORT	3478
